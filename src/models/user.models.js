@@ -47,10 +47,10 @@ const userSchema =new mongoose.Schema({
     }
 },{timestamps:true})
 
-     userSchema.pre("save",async function(next){
+    userSchema.pre("save",async function(next){
     if(!this.isModified("Password"))return next();
 
-    this.password=bcrypt.hash(this.password,10);
+    this.password=await bcrypt.hash(this.password,10);
     next();
 
     userSchema.methods.isPasswordCorrect=async function(password){
@@ -68,18 +68,18 @@ const userSchema =new mongoose.Schema({
             }.
             process.env.ACCESS_TOKEN_SECRET,
             {
-                expireIn:process.env.ACCESS_TOKEN_EXPIRY
+            expireIn:process.env.ACCESS_TOKEN_EXPIRY
             }
          )
     }
-    userSchema.methods.generateAccessToken=function(){
+    userSchema.methods.generateRefreshToken=function(){
          return jwt.sign(
             {
                 _id:this._id,
             }.
             process.env.REFRSH_TOKEN_SECRET,
             {
-                expireIn:process.env.REFRSH_TOKEN_EXPIRY
+            expireIn:process.env.REFRSH_TOKEN_EXPIRY
             }
          )
     }
