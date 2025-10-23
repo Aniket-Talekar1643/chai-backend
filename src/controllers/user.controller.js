@@ -9,8 +9,11 @@ import mongoose from 'mongoose';
 export const generateAccessAndRefreshToken = async function (userId) {
   try {
     const user = await User.findById(userId)
+    console.log(user);
     const accessToken = user.generateAccessToken()
     const refreshToken = user.generateRefreshToken()
+
+    console.log(accessToken);
 
     user.refreshToken = refreshToken
     await user.save({
@@ -93,14 +96,15 @@ export const registerUser = async (req, res, next) => {
   }
 };
 
-//req.body
+
+export const loginUser = async (req, res) => {
+  //req.body
 //username or mail
 //find the user
 //password check  
 //access token
 //send cookies
 //res successfully
-export const loginUser = async (req, res) => {
   try {
     const { email, username, password } = req.body;
     console.log("Request body:", req.body);
@@ -157,37 +161,40 @@ export const loginUser = async (req, res) => {
 };
 
 
-
 export const logoutUser = async function (req, res) {
   try {
-    await User.findByIdAndUpdate
-      (
-        req.user._id,
-        {
-          $set: {
-            refreshToken: undefined
-          }
-        },
-        {
-          new: true
-        }
-
-      )
+    // Remove refresh token from DB
+    await User.findByIdAndUpdate(
+      req.user._id,
+      { 
+        $set:
+         { 
+          refreshToken: undefined 
+        } 
+      },
+      { new: true }
+    );
 
     const options = {
       httpOnly: true,
       secure: true
-    }
-    res.status(200)
+      
+    };
+
+    // Clear cookies
+    res
+      .status(200)
       .clearCookie("accessToken", options)
       .clearCookie("refreshToken", options)
-      .josn({
-        message: "user Logout "
-      })
-  } catch (err) {
+      .json({ message: "User logged out" });
 
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Logout failed" });
   }
-}
+};
+
+
 export const refreshAccessToken = asyncHandler(async (req, res) => {
   const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
 
@@ -234,69 +241,108 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new ApiError(401, error?.message || "Invalid refresh token")
   }
 })
-export const changeCurrentPassword = async function () {
-  try {
-    const { oldPassword, newPassword, confirmPassword } = req.body
 
-    const user = User.findById(req.user?._id)
+
+
+export const changeCurrentPassword = async function (req, res) {
+  try {
+    const { oldPassword, newPassword, confirmPassword } = req.body;
+    // console.log(oldPassword,newPassword,confirmPassword);
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "New password and confirm password do not match" });
+    }
+
+    const user = await User.findById(req.user._id);
+   
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
+    // console.log(oldPassword);
 
     if (!isPasswordCorrect) {
-      throw new ApiError(400, "invalid password");
+      return res.status(400).json({ message: "Old password is not incorrect" });
     }
 
     user.password = newPassword;
-    await user.save({ validateBeforeSave });
+    await user.save({ validateBeforeSave: false });
 
-    if (newPassword !== confirmPassword) {
-      throw new ApiError(400, "Invalid  newPassword and confirmPassword");
-    }
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, {}, 'password change successfully'))
-
+    return res.status(200).json({ message: "Password changed successfully" });
 
   } catch (err) {
-
+    return res.status(err.statusCode || 500).json({ message: err.message || "Something went wrong" });
   }
-}
+};
+
+
+
 export const getCurrentUser = async function () {
+
   return res.status(200).json(200, req.user, "Current user fetched");
 
 }
-export const updateAccountDetails = async function () {
-  try {
-    const { fullname, email } = req.body
 
-    if (!(fullname && email)) {
-      throw new ApiError(400, "fullname and email is required");
+
+
+export const updateAccountDetails = async function (req, res) {
+  try {
+    const { fullname, email } = req.body;
+
+    if (!fullname || !email) {
+      throw new ApiError(400, "Full name and email are required");
     }
 
-    const user = await User.findByIdAndUpdate(
-      req.user?._id,
+    // Ensure user exists (verifyJWT middleware must be used before this route)
+    if (!req.user || !req.user._id) {
+      throw new ApiError(401, "Unauthorized request");
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
       {
-        $set: {
-          fullname: fullname,
-          email: email
-        }
+        $set: { fullname, email },
       },
       { new: true }
-    ).select("-password");
+    ).select("-password -refreshToken");
+
+    if (!updatedUser) {
+      throw new ApiError(404, "User not found");
+    }
 
     return res
       .status(200)
-      .json(new ApiResponse(200, user, "Account details updated successfully"));
+      .json(
+        new ApiResponse(200, updatedUser, "Account details updated successfully")
+      );
+  } catch (err) {
+    console.error("❌ Error updating account:", err.message);
+    return res.status(400).json({
+      message: err.message || "Failed to update account details",
+    });
   }
-  catch (err) {
+};
 
-  }
-}
 
 export const getUserChannelProfile = async function (req, res) {
   try {
+    const {username}=req.params;
+
+    console.log(username);
+    
     const channel = await User.aggregate([
-      { $match: { username: username?.toLowerCase() } },
+      { 
+        $match: 
+        { 
+          username:username?.toLowerCase()
+         } 
+        },
       {
         $lookup: {
           from: "subscriptions",
@@ -351,6 +397,8 @@ export const getUserChannelProfile = async function (req, res) {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
 export const getWatchHistory = async function (req,res) {
   const user = await User.aggregate([
     {
